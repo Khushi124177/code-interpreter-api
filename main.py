@@ -44,9 +44,11 @@ def run_code(request: CodeRequest):
                 line_number = frame.lineno
                 break
 
+        traceback_text = traceback.format_exc()
+
         return {
             "error": [line_number] if line_number else [],
-            "result": ""
+            "result": traceback_text
         }
 
     finally:
