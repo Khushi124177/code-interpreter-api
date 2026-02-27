@@ -7,7 +7,6 @@ import traceback
 
 app = FastAPI()
 
-# ✅ CORS (VERY IMPORTANT FOR GRADER)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,16 +15,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Request Model
 class CodeRequest(BaseModel):
     code: str
 
-# ✅ Root Route (Health Check)
 @app.get("/")
 def home():
     return {"status": "running"}
 
-# ✅ Code Interpreter Endpoint
 @app.post("/code-interpreter")
 def run_code(request: CodeRequest):
     old_stdout = sys.stdout
@@ -38,11 +34,20 @@ def run_code(request: CodeRequest):
             "error": [],
             "result": output
         }
-    except Exception:
-        error_message = traceback.format_exc()
+
+    except Exception as e:
+        tb = traceback.extract_tb(e.__traceback__)
+        line_number = None
+
+        for frame in tb:
+            if frame.filename == "<string>":
+                line_number = frame.lineno
+                break
+
         return {
-            "error": [error_message],
+            "error": [line_number] if line_number else [],
             "result": ""
         }
+
     finally:
         sys.stdout = old_stdout
