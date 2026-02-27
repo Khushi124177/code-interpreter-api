@@ -7,13 +7,12 @@ from typing import List
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-
 from google import genai
 from google.genai import types
 
 app = FastAPI()
 
-# CORS Enable (VERY IMPORTANT)
+# VERY IMPORTANT (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,6 +20,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ROOT ROUTE (IMPORTANT FOR TESTER)
+@app.get("/")
+def root():
+    return {"status": "running"}
 
 class CodeRequest(BaseModel):
     code: str
@@ -32,38 +36,29 @@ class CodeResponse(BaseModel):
 class ErrorAnalysis(BaseModel):
     error_lines: List[int]
 
+# ---------------- EXECUTION TOOL ----------------
 
-# ------------------ TOOL ------------------
-
-def execute_python_code(code: str) -> dict:
+def execute_python_code(code: str):
     old_stdout = sys.stdout
     sys.stdout = StringIO()
-
     try:
         exec(code)
         output = sys.stdout.getvalue()
         return {"success": True, "output": output}
-
     except Exception:
-        output = traceback.format_exc()
-        return {"success": False, "output": output}
-
+        return {"success": False, "output": traceback.format_exc()}
     finally:
         sys.stdout = old_stdout
 
+# ---------------- AI ANALYSIS ----------------
 
-# ------------------ AI ANALYSIS ------------------
-
-def analyze_error_with_ai(code: str, traceback_str: str) -> List[int]:
-
+def analyze_error_with_ai(code: str, traceback_str: str):
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
     prompt = f"""
-Analyze the Python code and traceback.
-Return the exact line number(s) where error occurred.
-
-Return only JSON like:
-{{"error_lines": [3]}}
+Analyze this Python code and traceback.
+Return ONLY JSON like:
+{{"error_lines": [line_numbers]}}
 
 CODE:
 {code}
@@ -90,29 +85,21 @@ TRACEBACK:
         ),
     )
 
-    result = ErrorAnalysis.model_validate_json(response.text)
-    return result.error_lines
+    return ErrorAnalysis.model_validate_json(response.text).error_lines
 
-
-# ------------------ ENDPOINT ------------------
+# ---------------- ENDPOINT ----------------
 
 @app.post("/code-interpreter", response_model=CodeResponse)
 def code_interpreter(request: CodeRequest):
 
-    execution = execute_python_code(request.code)
+    result = execute_python_code(request.code)
 
-    if execution["success"]:
-        return {
-            "error": [],
-            "result": execution["output"]
-        }
+    if result["success"]:
+        return {"error": [], "result": result["output"]}
 
     error_lines = analyze_error_with_ai(
         request.code,
-        execution["output"]
+        result["output"]
     )
 
-    return {
-        "error": error_lines,
-        "result": execution["output"]
-    }
+    return {"error": error_lines, "result": result["output"]}
